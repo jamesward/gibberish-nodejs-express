@@ -1,0 +1,15 @@
+{
+  "name": "gibberish-nodejs-express",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.10.1",
+    "q": "^1.0.1",
+    "request": "^2.47.0"
+  },
+  "engines": {
+    "node": "0.10.x"
+  }
+}
