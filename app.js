@@ -1,28 +1,63 @@
-var app = require('express')()
-var Q = require('q')
-var request = Q.denodeify(require('request'))
+var app = require('express')(),
+    async = require('async'),
+    cpuCount = require("os").cpus().length,
+    request = require('request'),
+    http = require('http'),
+    cluster = require('cluster');
 
-app.get('/', function(req, res) {
-  // get a random number
-  request('http://randnum.herokuapp.com').then(function(response) {
-    return parseInt(response[0].body);
-  }).then(function(numWords) {
-    // request random words
-    var requests = Array.apply(null, new Array(numWords)).map(function() {
-      return request('http://random-word.herokuapp.com')
+app.server = http.createServer(app);
+
+if (cluster.isMaster) {
+    for (var i = 0; i < cpuCount; i += 1) {
+        console.log('starting worker thread #' + (i + 1));
+        cluster.fork();
+    }
+
+    cluster.on('exit', function (worker) {
+        console.log(worker.id + " died! Restarting...");
+        cluster.fork();
     })
 
-    return Q.all(requests)
-  }).then(function(responses) {
-    // return the random words in the response
-    var words = responses.map(function(response) {
-      return response[0].body
-    })
+} else {
 
-    res.send(words.join(" "))
-  })
-})
+    app.get('/', function (req, res) {
 
-var server = app.listen((process.env.PORT || 5000), function() {
-  console.log('Running: http://%s:%s', server.address().address, server.address().port)
-})
+        function getPage(url) {
+            return function (callback) {
+                request(url, function (err, resp, body) {
+                    callback(null, body);
+                })
+            }
+        }
+
+        function iterator(x, cb) {
+            getPage('http://random-word.herokuapp.com')(function (err, word) {
+                cb(null, word)
+            });
+        }
+
+        function getWords(count, callback) {
+            var arr = Array.apply(null, new Array(parseInt(count)));
+            async.map(arr, iterator, function(err, result){
+                callback(null, result);
+            });
+        }
+
+        var tasks = [];
+        tasks.push(getPage('http://randnum.herokuapp.com'));
+        tasks.push(getWords);
+
+        async.waterfall(tasks, function (err, results) {
+            if (!err) {
+                res.send(results.join(" "));
+            } else {
+                console.log("ERROR: " + err);
+            }
+
+        });
+    });
+
+    app.server.listen((process.env.PORT || 5000), function () {
+        console.log('Running: http://%s:%s', this.address().address, this.address().port)
+    });
+}
